@@ -1,0 +1,5 @@
+{
+  "name": "SideNote",
+  "description": "A sleek, collapsible markdown note-taking app that lives on the side of your screen.",
+  "requestFramePermissions": []
+}
