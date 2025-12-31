@@ -9,18 +9,21 @@ import {
   FileText,
   Menu,
   Moon,
-  Sun
+  Sun,
+  FolderOpen
 } from 'lucide-react';
 import { Note, ViewMode } from './types';
 import MarkdownView from './components/MarkdownView';
 
 const LOCAL_STORAGE_KEY = 'sidenote-data';
+const NOTES_PATH_KEY = 'sidenote-path';
 const THEME_STORAGE_KEY = 'sidenote-theme';
+const FONT_SIZE_KEY = 'sidenote-fontsize';
 const MIN_SIDEBAR_WIDTH = 300;
 
 const App: React.FC = () => {
   // Detect Electron (safe check)
-  const isElectron = typeof window !== 'undefined' && (window as any).electron?.isElectron;
+  const isElectron = typeof window !== 'undefined' && window.electron?.isElectron;
 
   // --- State ---
   const [isOpen, setIsOpen] = useState(isElectron || false);
@@ -29,9 +32,11 @@ const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.EDIT);
   const [sidebarWidth, setSidebarWidth] = useState(450);
   const [showNoteList, setShowNoteList] = useState(true);
+  const [notesPath, setNotesPath] = useState<string | null>(null);
   
   // Theme & Resizing State
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [fontSize, setFontSize] = useState(15);
   const [isResizing, setIsResizing] = useState(false);
   const [resizeGhostX, setResizeGhostX] = useState(0);
 
@@ -40,39 +45,76 @@ const App: React.FC = () => {
 
   // --- Effects ---
 
-  // Load Notes & Theme
+  // Load Notes & Theme & Font Size
   useEffect(() => {
-    const savedNotes = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (savedNotes) {
-      try {
-        const parsed = JSON.parse(savedNotes);
-        setNotes(parsed);
-        if (parsed.length > 0) setActiveNoteId(parsed[0].id);
-      } catch (e) { console.error("Failed to load notes", e); }
-    } else {
-      const initialNote: Note = {
-        id: crypto.randomUUID(),
-        title: 'Welcome to SideNote',
-        content: '# Welcome to SideNote\n\nThis is a smart, collapsible markdown editor.\n\n- Use **Markdown** to style.\n- Your notes are saved automatically.',
-        updatedAt: Date.now()
-      };
-      setNotes([initialNote]);
-      setActiveNoteId(initialNote.id);
-    }
+    const init = async () => {
+      // 1. Theme
+      const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as 'light' | 'dark' | null;
+      if (savedTheme) {
+        setTheme(savedTheme);
+      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        setTheme('dark');
+      }
 
-    // Theme loading
-    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as 'light' | 'dark' | null;
-    if (savedTheme) {
-      setTheme(savedTheme);
-    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setTheme('dark');
-    }
-  }, []);
+      // 2. Font Size
+      const savedFontSize = localStorage.getItem(FONT_SIZE_KEY);
+      if (savedFontSize) {
+        setFontSize(parseInt(savedFontSize, 10));
+      }
+
+      // 3. Load Path
+      const savedPath = localStorage.getItem(NOTES_PATH_KEY);
+      if (savedPath && isElectron) {
+        setNotesPath(savedPath);
+        try {
+          // Load from file
+          const fileNotes = await window.electron?.loadNotes(savedPath);
+          if (fileNotes && Array.isArray(fileNotes)) {
+             setNotes(fileNotes);
+             if (fileNotes.length > 0) setActiveNoteId(fileNotes[0].id);
+             return; // Loaded from file, skip local storage
+          }
+        } catch (e) {
+          console.error("Failed to load from file", e);
+        }
+      }
+
+      // 4. Fallback to LocalStorage
+      const savedNotes = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (savedNotes) {
+        try {
+          const parsed = JSON.parse(savedNotes);
+          setNotes(parsed);
+          if (parsed.length > 0) setActiveNoteId(parsed[0].id);
+        } catch (e) { console.error("Failed to load notes", e); }
+      } else {
+        const initialNote: Note = {
+          id: crypto.randomUUID(),
+          title: 'Welcome to SideNote',
+          content: '# Welcome to SideNote\n\nThis is a smart, collapsible markdown editor.\n\n- Use **Markdown** to style.\n- Your notes are saved automatically.',
+          updatedAt: Date.now()
+        };
+        setNotes([initialNote]);
+        setActiveNoteId(initialNote.id);
+      }
+    };
+    
+    init();
+  }, [isElectron]);
 
   // Save Notes
   useEffect(() => {
-    if (notes.length > 0) localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(notes));
-  }, [notes]);
+    // Debounce saving slightly or just save on change
+    if (notes.length === 0) return;
+
+    // Always save to local storage as backup/web version
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(notes));
+
+    // Save to file if path exists
+    if (isElectron && notesPath && window.electron?.saveNotes) {
+      window.electron.saveNotes(notesPath, notes).catch(err => console.error("Failed to save to file", err));
+    }
+  }, [notes, notesPath, isElectron]);
 
   // Apply Theme
   useEffect(() => {
@@ -83,6 +125,11 @@ const App: React.FC = () => {
       document.documentElement.classList.remove('dark');
     }
   }, [theme]);
+
+  // Save Font Size
+  useEffect(() => {
+    localStorage.setItem(FONT_SIZE_KEY, fontSize.toString());
+  }, [fontSize]);
 
   // Click outside to close (implementing "auto hide")
   useEffect(() => {
@@ -188,6 +235,23 @@ const App: React.FC = () => {
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
+  const handleSelectFolder = async () => {
+    if (!isElectron || !window.electron?.selectDirectory) return;
+    const path = await window.electron.selectDirectory();
+    if (path) {
+      setNotesPath(path);
+      localStorage.setItem(NOTES_PATH_KEY, path);
+      // Save current notes to new location immediately
+      if (window.electron?.saveNotes) {
+        await window.electron.saveNotes(path, notes);
+      }
+    }
+  };
+
+  const adjustFontSize = (delta: number) => {
+    setFontSize(prev => Math.max(10, Math.min(32, prev + delta)));
+  };
+
   const formatDate = (ts: number) => {
     return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
@@ -207,7 +271,7 @@ const App: React.FC = () => {
       <div className="fixed right-0 top-1/2 -translate-y-1/2 z-50 group">
         <button 
           onClick={(e) => { e.stopPropagation(); setIsOpen(true); }}
-          className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md shadow-lg border border-gray-200 dark:border-slate-700 rounded-l-xl p-2 pl-3 hover:pl-5 hover:bg-blue-50 dark:hover:bg-slate-700 transition-all duration-300 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-2"
+          className="bg-white/90 dark:bg-black/90 backdrop-blur-md shadow-lg border border-gray-200 dark:border-slate-700 rounded-l-xl p-2 pl-3 hover:pl-5 hover:bg-blue-50 dark:hover:bg-slate-700 transition-all duration-300 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-2"
           title="Open Notes"
         >
            <ChevronLeft size={20} />
@@ -234,7 +298,7 @@ const App: React.FC = () => {
         {/* Sidebar */}
         <div 
           ref={sidebarRef}
-          className={`pointer-events-auto relative h-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl shadow-2xl flex flex-col transition-transform duration-500 ease-out translate-x-0 ${isElectron ? 'w-full border-none' : 'border-l border-white/20 dark:border-slate-800'}`}
+          className={`pointer-events-auto relative h-full bg-white/95 dark:bg-black/95 backdrop-blur-2xl shadow-2xl flex flex-col transition-transform duration-500 ease-out translate-x-0 ${isElectron ? 'w-full border-none' : 'border-l border-white/20 dark:border-slate-800'}`}
           style={{ width: isElectron ? '100%' : `${Math.min(sidebarWidth, window.innerWidth - 20)}px` }}
         >
           {/* Resize Handle (Web only) */}
@@ -247,7 +311,7 @@ const App: React.FC = () => {
           )}
           
           {/* Header */}
-          <div className="flex-none h-14 border-b border-gray-200/50 dark:border-slate-700/50 flex items-center justify-between px-4 bg-white/50 dark:bg-slate-900/50">
+          <div className="flex-none h-14 border-b border-gray-200/50 dark:border-slate-700/50 flex items-center justify-between px-4 bg-white/50 dark:bg-black/50">
             <div className="flex items-center gap-2">
               <button 
                 onClick={() => setShowNoteList(!showNoteList)}
@@ -266,6 +330,22 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
+               {/* Font Size Controls */}
+               <div className="hidden sm:flex items-center gap-0.5 bg-gray-100 dark:bg-slate-800 rounded-lg p-0.5 mx-2">
+                <button onClick={() => adjustFontSize(-1)} className="p-1 px-2 text-xs font-bold text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Decrease Font">A-</button>
+                <button onClick={() => adjustFontSize(1)} className="p-1 px-2 text-sm font-bold text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Increase Font">A+</button>
+               </div>
+
+               {isElectron && (
+                <button
+                  onClick={handleSelectFolder}
+                  className={`p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-all ${notesPath ? 'text-blue-600 dark:text-blue-400' : ''}`}
+                  title={notesPath ? `Notes saved to: ${notesPath}` : "Select Folder to Save Notes"}
+                >
+                  <FolderOpen size={20} />
+                </button>
+               )}
+
               <button
                 onClick={toggleTheme}
                 className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-all"
@@ -300,7 +380,7 @@ const App: React.FC = () => {
           <div className="flex-1 flex overflow-hidden">
             
             {/* Note List */}
-            <div className={`${showNoteList ? 'w-48 opacity-100' : 'w-0 opacity-0'} flex-none border-r border-gray-200/50 dark:border-slate-700/50 bg-gray-50/50 dark:bg-slate-900/30 transition-all duration-300 flex flex-col overflow-hidden`}>
+            <div className={`${showNoteList ? 'w-48 opacity-100' : 'w-0 opacity-0'} flex-none border-r border-gray-200/50 dark:border-slate-700/50 bg-gray-50/50 dark:bg-black/30 transition-all duration-300 flex flex-col overflow-hidden`}>
                <div className="flex-1 overflow-y-auto p-2 space-y-2">
                   {notes.map(note => (
                     <div 
@@ -335,7 +415,7 @@ const App: React.FC = () => {
             </div>
 
             {/* Editor Area */}
-            <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 min-w-0 transition-colors">
+            <div className="flex-1 flex flex-col bg-white dark:bg-black min-w-0 transition-colors">
               {activeNote ? (
                 <>
                   {/* Note Meta & Actions */}
@@ -382,11 +462,12 @@ const App: React.FC = () => {
                         value={activeNote.content}
                         onChange={(e) => handleUpdateNote(e.target.value)}
                         placeholder="Start typing your markdown note here..."
-                        className="w-full h-full resize-none bg-transparent outline-none text-sm leading-relaxed text-gray-700 dark:text-gray-200 font-mono placeholder-gray-300 dark:placeholder-slate-600"
+                        className="w-full h-full resize-none bg-transparent outline-none leading-relaxed text-gray-700 dark:text-gray-200 font-mono placeholder-gray-300 dark:placeholder-slate-600"
+                        style={{ fontSize: `${fontSize}px` }}
                         autoFocus
                       />
                     ) : (
-                      <div className="h-full">
+                      <div className="h-full" style={{ fontSize: `${fontSize}px` }}>
                          <MarkdownView content={activeNote.content} />
                       </div>
                     )}
@@ -402,7 +483,7 @@ const App: React.FC = () => {
           </div>
           
           {/* Footer */}
-          <div className="h-8 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between px-4 text-[10px] text-gray-400 dark:text-gray-500 bg-white/50 dark:bg-slate-900/50">
+          <div className="h-8 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between px-4 text-[10px] text-gray-400 dark:text-gray-500 bg-white/50 dark:bg-black/50">
              <span>Markdown Supported</span>
              <span>{activeNote?.content.length || 0} chars</span>
           </div>

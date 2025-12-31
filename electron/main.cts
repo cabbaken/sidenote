@@ -1,5 +1,6 @@
-import { app, BrowserWindow, shell, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, screen, dialog } from 'electron';
 import path from 'path';
+import fs from 'fs/promises';
 
 let mainWindow: BrowserWindow | null = null;
 let pollInterval: NodeJS.Timeout | null = null;
@@ -44,6 +45,49 @@ function createWindow() {
   // Start polling mechanism for edge detection
   startEdgePoll();
 }
+
+// --- IPC Handlers for File Storage ---
+
+ipcMain.handle('select-directory', async () => {
+  if (!mainWindow) return null;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory']
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+  return result.filePaths[0];
+});
+
+ipcMain.handle('save-notes', async (_, folderPath: string, notes: any) => {
+  try {
+    const filePath = path.join(folderPath, 'notes.json');
+    await fs.writeFile(filePath, JSON.stringify(notes, null, 2), 'utf-8');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Failed to save notes:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('load-notes', async (_, folderPath: string) => {
+  try {
+    const filePath = path.join(folderPath, 'notes.json');
+    // Check if file exists
+    try {
+      await fs.access(filePath);
+    } catch {
+      // File doesn't exist, return empty array
+      return [];
+    }
+    
+    const data = await fs.readFile(filePath, 'utf-8');
+    return JSON.parse(data);
+  } catch (error: any) {
+    console.error('Failed to load notes:', error);
+    throw error;
+  }
+});
 
 function startEdgePoll() {
   pollInterval = setInterval(() => {
