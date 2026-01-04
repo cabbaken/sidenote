@@ -98,23 +98,34 @@ function startEdgePoll() {
     const winBounds = mainWindow.getBounds();
     const workArea = currentDisplay.workArea;
 
-    const allDisplays = screen.getAllDisplays();
-    let globalMinX = 0;
-    let globalMaxX = 0;
+    // Check for neighbors to prevent hiding on internal edges
+    const displays = screen.getAllDisplays();
+    const cBounds = currentDisplay.bounds;
 
-    if (allDisplays.length > 0) {
-      globalMinX = Math.min(...allDisplays.map(d => d.bounds.x));
-      globalMaxX = Math.max(...allDisplays.map(d => d.bounds.x + d.bounds.width));
-    }
+    const hasNeighborLeft = displays.some(d => {
+      if (d.id === currentDisplay.id) return false;
+      // Check if d is directly to the left (d.right ~= c.left)
+      const isLeft = Math.abs((d.bounds.x + d.bounds.width) - cBounds.x) < 10;
+      // Check vertical overlap to ensure they are actually touching
+      const overlapsY = Math.max(d.bounds.y, cBounds.y) < Math.min(d.bounds.y + d.bounds.height, cBounds.y + cBounds.height);
+      return isLeft && overlapsY;
+    });
+
+    const hasNeighborRight = displays.some(d => {
+      if (d.id === currentDisplay.id) return false;
+      // Check if d is directly to the right (d.left ~= c.right)
+      const isRight = Math.abs(d.bounds.x - (cBounds.x + cBounds.width)) < 10;
+      // Check vertical overlap
+      const overlapsY = Math.max(d.bounds.y, cBounds.y) < Math.min(d.bounds.y + d.bounds.height, cBounds.y + cBounds.height);
+      return isRight && overlapsY;
+    });
 
     // Check edges
-    // Only allow docking on the far left of the entire setup
-    const isDockedLeft = Math.abs(winBounds.x - workArea.x) < EDGE_THRESHOLD && 
-                         Math.abs(workArea.x - globalMinX) < 10; 
+    // Dock left if near workArea start AND no neighbor to the left
+    const isDockedLeft = Math.abs(winBounds.x - workArea.x) < EDGE_THRESHOLD && !hasNeighborLeft;
                          
-    // Only allow docking on the far right of the entire setup
-    const isDockedRight = Math.abs((winBounds.x + winBounds.width) - (workArea.x + workArea.width)) < EDGE_THRESHOLD &&
-                          Math.abs((workArea.x + workArea.width) - globalMaxX) < 10;
+    // Dock right if near workArea end AND no neighbor to the right
+    const isDockedRight = Math.abs((winBounds.x + winBounds.width) - (workArea.x + workArea.width)) < EDGE_THRESHOLD && !hasNeighborRight;
     
     // Check if hidden (simple approximation based on position)
     const isHiddenLeft = winBounds.x <= (workArea.x - winBounds.width + PEEK_WIDTH);
