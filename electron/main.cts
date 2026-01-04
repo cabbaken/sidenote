@@ -98,9 +98,23 @@ function startEdgePoll() {
     const winBounds = mainWindow.getBounds();
     const workArea = currentDisplay.workArea;
 
+    const allDisplays = screen.getAllDisplays();
+    let globalMinX = 0;
+    let globalMaxX = 0;
+
+    if (allDisplays.length > 0) {
+      globalMinX = Math.min(...allDisplays.map(d => d.bounds.x));
+      globalMaxX = Math.max(...allDisplays.map(d => d.bounds.x + d.bounds.width));
+    }
+
     // Check edges
-    const isDockedLeft = Math.abs(winBounds.x - workArea.x) < EDGE_THRESHOLD;
-    const isDockedRight = Math.abs((winBounds.x + winBounds.width) - (workArea.x + workArea.width)) < EDGE_THRESHOLD;
+    // Only allow docking on the far left of the entire setup
+    const isDockedLeft = Math.abs(winBounds.x - workArea.x) < EDGE_THRESHOLD && 
+                         Math.abs(workArea.x - globalMinX) < 10; 
+                         
+    // Only allow docking on the far right of the entire setup
+    const isDockedRight = Math.abs((winBounds.x + winBounds.width) - (workArea.x + workArea.width)) < EDGE_THRESHOLD &&
+                          Math.abs((workArea.x + workArea.width) - globalMaxX) < 10;
     
     // Check if hidden (simple approximation based on position)
     const isHiddenLeft = winBounds.x <= (workArea.x - winBounds.width + PEEK_WIDTH);
