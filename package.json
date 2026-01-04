@@ -12,11 +12,17 @@
     "electron:build": "npm run build && tsc -p electron && electron-builder"
   },
   "dependencies": {
+    "@tiptap/extension-placeholder": "^3.14.0",
+    "@tiptap/extension-typography": "^3.14.0",
+    "@tiptap/pm": "^3.14.0",
+    "@tiptap/react": "^3.14.0",
+    "@tiptap/starter-kit": "^3.14.0",
     "lucide-react": "^0.562.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.0"
+    "remark-gfm": "^4.0.0",
+    "tiptap-markdown": "^0.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -13,7 +13,7 @@ import {
   FolderOpen
 } from 'lucide-react';
 import { Note, ViewMode } from './types';
-import MarkdownView from './components/MarkdownView';
+import EditorComponent from './components/Editor';
 
 const LOCAL_STORAGE_KEY = 'sidenote-data';
 const NOTES_PATH_KEY = 'sidenote-path';
@@ -427,50 +427,22 @@ const App: React.FC = () => {
                       className="flex-1 text-lg font-bold text-gray-800 dark:text-gray-100 bg-transparent border-none focus:ring-0 placeholder-gray-300 dark:placeholder-slate-600"
                       placeholder="Note Title"
                     />
-                    <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 p-1 rounded-lg">
-                      <button
-                        onClick={() => setViewMode(ViewMode.EDIT)}
-                        className={`p-1.5 rounded-md text-xs font-medium transition-all ${
-                          viewMode === ViewMode.EDIT 
-                          ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-300 shadow-sm' 
-                          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-                        }`}
-                      >
-                        <Edit3 size={16} />
-                      </button>
-                      <button
-                        onClick={() => setViewMode(ViewMode.PREVIEW)}
-                        className={`p-1.5 rounded-md text-xs font-medium transition-all ${
-                          viewMode === ViewMode.PREVIEW 
-                          ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-300 shadow-sm' 
-                          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-                        }`}
-                      >
-                        <Eye size={16} />
-                      </button>
+                    <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 p-1 rounded-lg invisible">
+                       {/* Space reserved for future tools */}
                     </div>
                   </div>
                   
-                  <div className="px-4 text-[10px] text-gray-400 dark:text-gray-500 mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2 mb-4 text-xs text-gray-400 dark:text-gray-500 font-mono px-8">
                     <span>{formatDate(activeNote.updatedAt)}</span>
                   </div>
 
-                  {/* Editor / Preview */}
-                  <div className="flex-1 overflow-y-auto px-4 pb-4">
-                    {viewMode === ViewMode.EDIT ? (
-                      <textarea
-                        value={activeNote.content}
-                        onChange={(e) => handleUpdateNote(e.target.value)}
-                        placeholder="Start typing your markdown note here..."
-                        className="w-full h-full resize-none bg-transparent outline-none leading-relaxed text-gray-700 dark:text-gray-200 font-mono placeholder-gray-300 dark:placeholder-slate-600"
-                        style={{ fontSize: `${fontSize}px` }}
-                        autoFocus
-                      />
-                    ) : (
-                      <div className="h-full" style={{ fontSize: `${fontSize}px` }}>
-                         <MarkdownView content={activeNote.content} />
-                      </div>
-                    )}
+                  <div className="flex-1 overflow-y-auto">
+                     <EditorComponent 
+                      key={activeNote.id}
+                      content={activeNote.content}
+                      fontSize={fontSize}
+                      onChange={handleUpdateNote}
+                    />
                   </div>
                 </>
               ) : (
